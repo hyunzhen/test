@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>소울 넥서스 테스트</title>
+  <style>
+    :root{
+      --bg:#ffffff; --panel:#f7f8fb; --muted:#60636b; --text:#17181a; --accent:#4a79ff; --accent2:#8b5cff; --line:#e2e4ea;
+      --slotEmpty:#eef1f6; --slotBorder:#c6c8ce;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Noto Sans KR, Apple SD Gothic Neo, system-ui, Helvetica Neue, Arial;}
+    .wrap{max-width:980px; margin:28px auto; padding:0 16px 48px;}
+    h1{font-size:22px; font-weight:700; margin:8px 0 18px}
+    .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 18px; box-shadow:0 4px 18px rgba(0,0,0,.06);}    
+    .stoneIcon{width:56px; height:56px; border-radius:12px; background: radial-gradient(60% 60% at 50% 40%, #99a7ff 0%, #6aa2ff 40%, #4f5aa6 100%); border:1px solid #5a68c7;}
+    .progress{margin:10px 0; height:16px; background:#edf1f7; border-radius:999px; overflow:hidden}
+    .bar{height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--accent2)); transition:width .2s}
+    .gridSlots{display:grid; grid-template-columns:repeat(10,1fr); gap:8px;}
+    .slot{height:40px; border-radius:10px; border:1px dashed var(--slotBorder); background:var(--slotEmpty); display:flex; align-items:center; justify-content:center; font-size:12px; color:#6a738a; cursor:pointer}
+    .slot.filled{border-style:solid; color:#fff; font-weight:600}
+    .chip{cursor:pointer; border-radius:8px; padding:8px 10px; border:1px solid var(--slotBorder); margin-right:8px; background:#fff}
+    .btnRow{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
+    .btnPrimary{background:linear-gradient(90deg, var(--accent), var(--accent2)); color:#fff; border:none; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer}
+    .btnGhost{background:#fff; border:1px solid var(--slotBorder); border-radius:10px; padding:10px 14px; cursor:pointer}
+    select{margin:6px 0 10px; padding:6px 8px; border-radius:8px; border:1px solid var(--slotBorder);}    
+    .soul-info{font-size:13px; color:var(--muted); margin-top:10px; line-height:1.6; white-space:pre-line;}
+
+    /* Modal */
+    .modalBack{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50}
+    .modal{background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; width:min(92vw, 420px); box-shadow:0 12px 40px rgba(0,0,0,.18)}
+    .modal h3{margin:0 0 8px; font-size:18px}
+    .modal p{margin:0 0 14px; color:#454954; font-size:14px}
+    .modal .actions{display:flex; justify-content:flex-end; gap:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>소울 넥서스 테스트</h1>
+    <div class="card">
+      <div>
+        <label>강화 단계 선택: </label>
+        <select id="pathSelect">
+          <option value="6000">C → B (필요 6,000pt)</option>
+          <option value="10000" selected>B → A (필요 10,000pt)</option>
+        </select>
+        <div class="stoneIcon"></div>
+        <div class="progress"><div class="bar" id="bar"></div></div>
+        <div id="gaugeInfo">0 / 10,000</div>
+      </div>
+
+      <h3>소울 추가</h3>
+      <div>
+        <button class="chip" data-type="common">보통 소울</button>
+        <button class="chip" data-type="strong">강력한 소울</button>
+        <button class="chip" data-type="magn">위대한 소울</button>
+      </div>
+      <div class="soul-info" id="soulInfo"></div>
+
+      <h3>슬롯</h3>
+      <div class="gridSlots" id="slots"></div>
+      <div class="btnRow">
+        <button id="apply" class="btnPrimary">강화하기</button>
+        <button id="resetBtn" class="btnGhost">초기화</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 성공 팝업 -->
+  <div class="modalBack" id="modalBack" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">넥서스 스톤이 강화되었습니다!</h3>
+      <p id="modalDesc">경로: C → B</p>
+      <div class="actions">
+        <button id="modalOk" class="btnPrimary">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MAX_SLOTS = 10;
+    let target = 10000;
+    let gauge = 0;
+    let picks = [];
+
+    const slots = document.getElementById('slots');
+    const bar = document.getElementById('bar');
+    const gaugeInfo = document.getElementById('gaugeInfo');
+    const pathSelect = document.getElementById('pathSelect');
+    const soulInfo = document.getElementById('soulInfo');
+    const resetBtn = document.getElementById('resetBtn');
+
+    // Modal refs
+    const modalBack = document.getElementById('modalBack');
+    const modalDesc = document.getElementById('modalDesc');
+    const modalOk = document.getElementById('modalOk');
+
+    const SOULS = {
+      common: { label:'보통', min:160, max:480, weight:2, class:'#a5c0e1', prob:0.145 },
+      strong: { label:'강력한', min:480, max:960, weight:3, class:'#6fc0e2', prob:0.075 },
+      magn:   { label:'위대한', min:1600, max:3200, weight:5, class:'#b6a1ff', prob:0.05 },
+    };
+
+    function renderSoulInfo(){
+      soulInfo.innerHTML = `✨일반 소울 (확률 14.5%) : 160 ~ 480 pt\n✨강인한, 빛나는, 강력한 소울 (확률 7.5%) : 480 ~ 960 pt\n✨위대한 소울 (확률 5.0%) : 1600 ~ 3200 pt`;
+    }
+
+    function renderSlots(){
+      slots.innerHTML='';
+      for(let i=0;i<MAX_SLOTS;i++){
+        const s = picks[i];
+        const div=document.createElement('div');
+        div.className='slot';
+        if(s){
+          div.classList.add('filled');
+          div.style.background=s.class;
+          div.textContent=s.label;
+          div.onclick=()=>{picks.splice(i,1);renderSlots();};
+        }else div.textContent='빈 슬롯';
+        slots.appendChild(div);
+      }
+      updateUI();
+    }
+
+    function randomRange(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+
+    function addSoul(type){
+      if(picks.length>=MAX_SLOTS)return;
+      const s=SOULS[type];
+      const gain=randomRange(s.min,s.max);
+      picks.push({label:s.label,gain,weight:s.weight,class:s.class});
+      renderSlots();
+    }
+
+    function apply(){
+      let gain=0; picks.forEach(s=>gain+=s.gain);
+      gauge=Math.min(gauge+gain,target);
+      picks=[]; updateUI(); renderSlots();
+      if(gauge>=target){
+        const pathText = pathSelect.options[pathSelect.selectedIndex].textContent.split('(')[0].trim();
+        modalDesc.textContent = `경로: ${pathText}`;
+        openModal();
+      }
+    }
+
+    function updateUI(){
+      const pct=(gauge/target)*100; bar.style.width=pct+'%';
+      gaugeInfo.textContent=`${gauge.toLocaleString()} / ${target.toLocaleString()}`;
+    }
+
+    function openModal(){ modalBack.style.display='flex'; }
+    function closeModal(){ modalBack.style.display='none'; }
+
+    // Events
+    document.querySelectorAll('.chip').forEach(btn=>{btn.onclick=()=>addSoul(btn.dataset.type);});
+    document.getElementById('apply').onclick=apply;
+    pathSelect.addEventListener('change', e=>{
+      target=parseInt(e.target.value,10);
+      gauge=0; picks=[]; updateUI(); renderSlots();
+      document.getElementById('gaugeInfo').textContent=`0 / ${target.toLocaleString()}`;
+    });
+    resetBtn.addEventListener('click', ()=>{ gauge=0; picks=[]; updateUI(); renderSlots(); });
+    modalOk.addEventListener('click', ()=>{ closeModal(); });
+
+    renderSoulInfo();
+    renderSlots();
+  </script>
+</body>
+</html>
